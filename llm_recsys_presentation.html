@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM-Based Recommendation Systems - Technical Deep Dive</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2B0E6/2S6JvK/8I9L4g2Gv+6T5F5G6w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            padding: 20px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .main-container {
+            width: 100%;
+            max-width: 1200px;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.3);
+            padding: 40px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 30px;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #0077b5, #00a0dc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .card-container {
+            position: relative;
+            width: 1000px;
+            height: 600px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 1200px;
+        }
+
+        .system-card {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            background: #fafafa;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+            opacity: 0;
+            transform: rotateY(90deg);
+            transition: opacity 0.6s ease-in-out, transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            pointer-events: none;
+        }
+
+        .system-card.active {
+            opacity: 1;
+            transform: rotateY(0deg);
+            pointer-events: auto;
+        }
+
+        .system-card.active.zoomed {
+            transform: scale(1.05);
+            box-shadow: 0 30px 80px rgba(0,0,0,0.25);
+            transition: transform 1s ease-in-out, box-shadow 1s ease-in-out;
+        }
+
+        .amazon.active { border-color: #ff6b35; background: linear-gradient(135deg, #fff8f5, #ffffff); }
+        .netflix.active { border-color: #e50914; background: linear-gradient(135deg, #fef5f5, #ffffff); }
+        .youtube.active { border-color: #ff0000; background: linear-gradient(135deg, #fff5f5, #ffffff); }
+        .microsoft.active { border-color: #0078d4; background: linear-gradient(135deg, #f5f9ff, #ffffff); }
+        .deepmind.active { border-color: #4285f4; background: linear-gradient(135deg, #f0f7ff, #ffffff); }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .company-badge {
+            background: #1a1a1a;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 11px;
+            font-weight: 700;
+            position: absolute;
+            top: -10px;
+            right: 0;
+            text-transform: uppercase;
+        }
+        
+        .amazon .company-badge { background: #ff6b35; }
+        .netflix .company-badge { background: #e50914; }
+        .youtube .company-badge { background: #ff0000; }
+        .microsoft .company-badge { background: #0078d4; }
+        .deepmind .company-badge { background: #4285f4; }
+        
+        .system-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 20px;
+            color: white;
+            font-weight: 800;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .amazon .system-icon { background: linear-gradient(135deg, #ff6b35, #ff8c42); }
+        .netflix .system-icon { background: linear-gradient(135deg, #e50914, #f40612); }
+        .youtube .system-icon { background: linear-gradient(135deg, #ff0000, #cc0000); }
+        .microsoft .system-icon { background: linear-gradient(135deg, #0078d4, #106ebe); }
+        .deepmind .system-icon { background: linear-gradient(135deg, #4285f4, #1a73e8); }
+        
+        .system-title { flex: 1; }
+        
+        .system-title h3 {
+            font-size: 20px;
+            font-weight: 800;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+        
+        .system-title p {
+            font-size: 13px;
+            color: #666;
+            font-weight: 600;
+        }
+
+        .card-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            flex: 1;
+        }
+        
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            overflow-y: hidden;
+        }
+        
+        .right-column {
+            display: flex;
+            flex-direction: column;
+            overflow-y: hidden;
+        }
+        
+        .architecture-section, .technical-specs, .use-case-section {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        
+        .section-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 3px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .section-icon {
+            margin-right: 8px;
+            font-size: 15px;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f0f0f0;
+            border-radius: 5px;
+        }
+        
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .tech-item {
+            background: white;
+            border: 2px solid #e8e8e8;
+            border-radius: 16px;
+            padding: 6px 12px;
+            font-size: 10px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+        
+        .architecture-flow {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .flow-step {
+            background: white;
+            border-radius: 10px;
+            padding: 10px 14px;
+            border-left: 4px solid #e8e8e8;
+            font-size: 12px;
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+        
+        .step-detail {
+            font-size: 10px;
+            color: #666;
+            margin-top: 4px;
+            font-style: italic;
+            font-weight: 500;
+        }
+        
+        .technical-specs, .use-case-section {
+            background: rgba(0,0,0,0.04);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 15px;
+        }
+        
+        .spec-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        
+        .spec-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            padding: 5px 0;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        
+        .spec-item:last-child {
+            border-bottom: none;
+        }
+        
+        .spec-label {
+            color: #666;
+            font-weight: 600;
+        }
+        
+        .spec-value {
+            color: #1a1a1a;
+            font-weight: 700;
+        }
+        
+        .use-case-item {
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+        }
+        .use-case-item .fas {
+            color: #0077b5;
+            margin-right: 6px;
+        }
+        
+        .performance-metrics {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 12px;
+            padding: 14px;
+            margin-top: 15px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .metrics-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .metrics-grid {
+            display: flex;
+            justify-content: space-around;
+        }
+        
+        .metric-item {
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 16px;
+            font-weight: 800;
+            margin-bottom: 2px;
+        }
+        
+        .metric-label {
+            font-size: 10px;
+            opacity: 0.9;
+        }
+        
+        .key-insight {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 25px;
+            border-radius: 16px;
+            margin-top: 30px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            width: 60%;
+        }
+        
+        .key-insight::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: insightPulse 3s ease-in-out infinite;
+        }
+        
+        @keyframes insightPulse {
+            0%, 100% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1); opacity: 1; }
+        }
+        
+        .insight-title {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 12px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .insight-text {
+            font-size: 15px;
+            line-height: 1.6;
+            position: relative;
+            z-index: 1;
+        }
+
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 12px;
+            z-index: 10;
+        }
+        
+        .control-btn {
+            background: #0077b5;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+        
+        .control-btn:hover {
+            background: #005885;
+            transform: translateY(-2px);
+        }
+        
+        .control-btn.active {
+            background: #00a0dc;
+            box-shadow: 0 4px 12px rgba(0,160,220,0.3);
+        }
+        
+        .progress-indicator {
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            margin: 25px 0;
+            position: relative;
+            overflow: hidden;
+            width: 60%;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #0077b5, #00a0dc);
+            border-radius: 4px;
+            width: 0%;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 20px;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+            animation: progressShine 2s ease-in-out infinite;
+        }
+        
+        @keyframes progressShine {
+            0% { transform: translateX(-100%); }
+            50% { transform: translateX(0); }
+            100% { transform: translateX(100%); }
+        }
+        
+        .timer-display {
+            display: none;
+        }
+        
+        .current-system {
+            position: absolute;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.95);
+            color: white;
+            padding: 12px 25px;
+            border-radius: 25px;
+            font-size: 15px;
+            font-weight: 600;
+            z-index: 10;
+        }
+
+        @media (max-width: 1400px) {
+            .main-container {
+                min-width: 100%;
+                padding: 25px;
+            }
+            .card-container {
+                width: 100%;
+                min-height: 500px;
+            }
+            .system-card {
+                padding: 20px;
+            }
+            .card-content {
+                grid-template-columns: 1fr;
+            }
+            .system-title h3 {
+                font-size: 18px;
+            }
+            .system-title p {
+                font-size: 12px;
+            }
+            .architecture-section, .technical-specs, .use-case-section {
+                margin-bottom: 15px;
+            }
+            .section-title {
+                font-size: 14px;
+            }
+            .tech-item, .flow-step, .use-case-item {
+                font-size: 11px;
+            }
+            .spec-item {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="timer-display" id="timerDisplay">
+            ⏱️ <span id="countdown">10.0</span>
+        </div>
+        <div class="current-system" id="currentSystem">Amazon M6-Rec - Multimodal E-commerce Recommendations</div>
+        
+        <div class="header">
+            <h1>LLM-Based Recommendation Systems: Technical Architecture Deep Dive</h1>
+            <p>Comprehensive analysis of production-scale LLM recommendation architectures from industry leaders</p>
+        </div>
+        
+        <div class="controls">
+            <button class="control-btn active" onclick="startAnimation()">▶ Play</button>
+            <button class="control-btn" onclick="pauseAnimation()">⏸ Pause</button>
+            <button class="control-btn" onclick="resetAnimation()">↻ Reset</button>
+        </div>
+        
+        <div class="progress-indicator">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        
+        <div class="card-container">
+            <!-- Amazon M6-Rec -->
+            <div class="system-card amazon" id="card1">
+                <div class="card-header">
+                    <div class="system-icon">M6</div>
+                    <div class="system-title">
+                        <h3>Amazon M6-Rec</h3>
+                        <p>Multimodal Unified Architecture</p>
+                    </div>
+                    <div class="company-badge">Amazon</div>
+                </div>
+                <div class="card-content">
+                    <div class="left-column">
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🔧</span>
+                                Core Technologies
+                            </div>
+                            <div class="tech-stack">
+                                <div class="tech-item">MoE</div>
+                                <div class="tech-item">Cross-Modal Attention</div>
+                                <div class="tech-item">ViT</div>
+                                <div class="tech-item">Multi-Task Learning</div>
+                                <div class="tech-item">Contrastive Learning</div>
+                                <div class="tech-item">Parameter Sharing</div>
+                                <div class="tech-item">Knowledge Distillation</div>
+                            </div>
+                        </div>
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🏗️</span>
+                                Architecture Pipeline
+                            </div>
+                            <div class="architecture-flow">
+                                <div class="flow-step">
+                                    Multimodal Input Encoder
+                                    <div class="step-detail">Text, Images, Product metadata, User behavior</div>
+                                </div>
+                                <div class="flow-step">
+                                    Cross-Modal Fusion Layer
+                                    <div class="step-detail">Multi-head cross-attention, joint embedding space</div>
+                                </div>
+                                <div class="flow-step">
+                                    Massive LLM Core
+                                    <div class="step-detail">Transformer with MoE routing, 100B+ params</div>
+                                </div>
+                                <div class="flow-step">
+                                    Multi-Task Output Heads
+                                    <div class="step-detail">Search ranking, ads, product recs</div>
+                                </div>
+                                <div class="flow-step">
+                                    Real-time Contextual Adaptation
+                                    <div class="step-detail">Session context, dynamic user profiling</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="right-column">
+                        <div class="technical-specs">
+                            <div class="section-title">
+                                <span class="section-icon">📊</span>
+                                Technical Specifications
+                            </div>
+                            <div class="spec-grid">
+                                <div class="spec-item">
+                                    <span class="spec-label">Model Size:</span>
+                                    <span class="spec-value">100B+ params</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Training Data:</span>
+                                    <span class="spec-value">10TB+ multimodal</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Latency:</span>
+                                    <span class="spec-value">< 50ms</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Modalities:</span>
+                                    <span class="spec-value">Text + Image + Meta</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="use-case-section">
+                            <div class="section-title">
+                                <span class="section-icon">💡</span>
+                                Ideal Use Cases
+                            </div>
+                            <div class="use-case-list">
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Large-scale e-commerce</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Multimodal search & ads</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Personalized content delivery</div>
+                            </div>
+                        </div>
+                        <div class="performance-metrics">
+                            <div class="metrics-title">Production Performance</div>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-value">15.2%</div>
+                                    <div class="metric-label">CTR Improvement</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">28%</div>
+                                    <div class="metric-label">Cold Start Lift</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">12.8%</div>
+                                    <div class="metric-label">Revenue Impact</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Netflix RecLLM -->
+            <div class="system-card netflix" id="card2">
+                <div class="card-header">
+                    <div class="system-icon">REC</div>
+                    <div class="system-title">
+                        <h3>Netflix RecLLM</h3>
+                        <p>Streaming-Optimized LLM Architecture</p>
+                    </div>
+                    <div class="company-badge">Netflix</div>
+                </div>
+                <div class="card-content">
+                    <div class="left-column">
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🔧</span>
+                                Core Technologies
+                            </div>
+                            <div class="tech-stack">
+                                <div class="tech-item">GPT-4 Base Model</div>
+                                <div class="tech-item">LoRA Fine-tuning</div>
+                                <div class="tech-item">Prompt Engineering</div>
+                                <div class="tech-item">Streaming Context</div>
+                                <div class="tech-item">Real-time Learning</div>
+                                <div class="tech-item">Latency Optimization</div>
+                                <div class="tech-item">Domain Adaptation</div>
+                            </div>
+                        </div>
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🏗️</span>
+                                Architecture Pipeline
+                            </div>
+                            <div class="architecture-flow">
+                                <div class="flow-step">
+                                    User Context Aggregation
+                                    <div class="step-detail">Viewing history, ratings, search queries</div>
+                                </div>
+                                <div class="flow-step">
+                                    Streaming-Specific Prompts
+                                    <div class="step-detail">Genre preferences, device context, time-of-day signals</div>
+                                </div>
+                                <div class="flow-step">
+                                    LLM Inference Engine
+                                    <div class="step-detail">GPT-4 with Netflix-specific LoRA adapters</div>
+                                </div>
+                                <div class="flow-step">
+                                    Real-time Ranking & Filtering
+                                    <div class="step-detail">Content availability, licensing, quality scores</div>
+                                </div>
+                                <div class="flow-step">
+                                    Personalized Response Generation
+                                    <div class="step-detail">Contextual recommendations, explanation generation</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="right-column">
+                        <div class="technical-specs">
+                            <div class="section-title">
+                                <span class="section-icon">📊</span>
+                                Technical Specifications
+                            </div>
+                            <div class="spec-grid">
+                                <div class="spec-item">
+                                    <span class="spec-label">Base Model:</span>
+                                    <span class="spec-value">GPT-4 (70B)</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Fine-tuning:</span>
+                                    <span class="spec-value">LoRA Adapters</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Latency:</span>
+                                    <span class="spec-value">< 100ms</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Update Frequency:</span>
+                                    <span class="spec-value">Real-time</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="use-case-section">
+                            <div class="section-title">
+                                <span class="section-icon">💡</span>
+                                Ideal Use Cases
+                            </div>
+                            <div class="use-case-list">
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Streaming services with dynamic libraries</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Personalized "why this is for you" descriptions</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Interactive content discovery</div>
+                            </div>
+                        </div>
+                        <div class="performance-metrics">
+                            <div class="metrics-title">Streaming Performance</div>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-value">22%</div>
+                                    <div class="metric-label">Engagement Lift</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">18%</div>
+                                    <div class="metric-label">Watch Time ↑</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">31%</div>
+                                    <div class="metric-label">New Content Discovery</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- YouTube PaLM RecSys -->
+            <div class="system-card youtube" id="card3">
+                <div class="card-header">
+                    <div class="system-icon">YT</div>
+                    <div class="system-title">
+                        <h3>YouTube PaLM-Rec</h3>
+                        <p>Two-Stage Video Recommendation</p>
+                    </div>
+                    <div class="company-badge">Google</div>
+                </div>
+                <div class="card-content">
+                    <div class="left-column">
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🔧</span>
+                                Core Technologies
+                            </div>
+                            <div class="tech-stack">
+                                <div class="tech-item">PaLM-2</div>
+                                <div class="tech-item">Two-Stage Pipeline</div>
+                                <div class="tech-item">Video Understanding</div>
+                                <div class="tech-item">Few-Shot Learning</div>
+                                <div class="tech-item">Contextual Embeddings</div>
+                                <div class="tech-item">Massive Retrieval</div>
+                                <div class="tech-item">Neural Ranking</div>
+                            </div>
+                        </div>
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🏗️</span>
+                                Architecture Pipeline
+                            </div>
+                            <div class="architecture-flow">
+                                <div class="flow-step">
+                                    Candidate Recall Stage
+                                    <div class="step-detail">Video corpus scanning, semantic similarity</div>
+                                </div>
+                                <div class="flow-step">
+                                    Content Understanding Module
+                                    <div class="step-detail">Transcription, thumbnail analysis, metadata</div>
+                                </div>
+                                <div class="flow-step">
+                                    PaLM-2 LLM Reranking
+                                    <div class="step-detail">Scores candidates based on user history</div>
+                                </div>
+                                <div class="flow-step">
+                                    Final Ranking & Diversification
+                                    <div class="step-detail">Applies business logic and diversity filters</div>
+                                </div>
+                                <div class="flow-step">
+                                    Clickstream & Feedback Loop
+                                    <div class="step-detail">User interactions update the ranking model</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="right-column">
+                        <div class="technical-specs">
+                            <div class="section-title">
+                                <span class="section-icon">📊</span>
+                                Technical Specifications
+                            </div>
+                            <div class="spec-grid">
+                                <div class="spec-item">
+                                    <span class="spec-label">Base Model:</span>
+                                    <span class="spec-value">PaLM-2</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Pipeline:</span>
+                                    <span class="spec-value">Recall + Rerank</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Latency:</span>
+                                    <span class="spec-value">< 200ms</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Update Frequency:</span>
+                                    <span class="spec-value">Daily Batches</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="use-case-section">
+                            <div class="section-title">
+                                <span class="section-icon">💡</span>
+                                Ideal Use Cases
+                            </div>
+                            <div class="use-case-list">
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>High-volume video platforms</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Handling a massive catalog of fresh content</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Personalized feeds from recent interactions</div>
+                            </div>
+                        </div>
+                        <div class="performance-metrics">
+                            <div class="metrics-title">Video Performance</div>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-value">11%</div>
+                                    <div class="metric-label">Click-through Rate</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">3.2%</div>
+                                    <div class="metric-label">Watch Time ↑</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">High</div>
+                                    <div class="metric-label">Scalability</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+    
+            <!-- Microsoft ChatRec -->
+            <div class="system-card microsoft" id="card4">
+                <div class="card-header">
+                    <div class="system-icon">CHAT</div>
+                    <div class="system-title">
+                        <h3>Microsoft ChatRec</h3>
+                        <p>Conversational Recommender Systems</p>
+                    </div>
+                    <div class="company-badge">Microsoft</div>
+                </div>
+                <div class="card-content">
+                    <div class="left-column">
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🔧</span>
+                                Core Technologies
+                            </div>
+                            <div class="tech-stack">
+                                <div class="tech-item">Dialogue LLM</div>
+                                <div class="tech-item">Session Context</div>
+                                <div class="tech-item">Knowledge Graph</div>
+                                <div class="tech-item">RAG</div>
+                                <div class="tech-item">Multi-turn Conversation</div>
+                                <div class="tech-item">User Intent Modeling</div>
+                                <div class="tech-item">Dynamic Prompting</div>
+                            </div>
+                        </div>
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🏗️</span>
+                                Architecture Pipeline
+                            </div>
+                            <div class="architecture-flow">
+                                <div class="flow-step">
+                                    Conversational Intent Parsing
+                                    <div class="step-detail">Extracts intent, entities from dialogue</div>
+                                </div>
+                                <div class="flow-step">
+                                    Real-time Context & State
+                                    <div class="step-detail">Maintains conversational state and preferences</div>
+                                </div>
+                                <div class="flow-step">
+                                    Knowledge Base & Retrieval
+                                    <div class="step-detail">Queries product knowledge graph for items</div>
+                                </div>
+                                <div class="flow-step">
+                                    Dialogue LLM Generation
+                                    <div class="step-detail">Generates personalized recommendations</div>
+                                </div>
+                                <div class="flow-step">
+                                    Feedback & Refinement Loop
+                                    <div class="step-detail">Processes user responses to refine future recs</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="right-column">
+                        <div class="technical-specs">
+                            <div class="section-title">
+                                <span class="section-icon">📊</span>
+                                Technical Specifications
+                            </div>
+                            <div class="spec-grid">
+                                <div class="spec-item">
+                                    <span class="spec-label">Base Model:</span>
+                                    <span class="spec-value">Proprietary LLM</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Interactivity:</span>
+                                    <span class="spec-value">Multi-turn dialogue</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Ideal Use Case:</span>
+                                    <span class="spec-value">Chatbots, Q&A</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Latency:</span>
+                                    <span class="spec-value">Variable (1-2s)</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="use-case-section">
+                            <div class="section-title">
+                                <span class="section-icon">💡</span>
+                                Ideal Use Cases
+                            </div>
+                            <div class="use-case-list">
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Customer service, conversational commerce</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Interactive recommendation chatbots</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Personal shopping assistants</div>
+                            </div>
+                        </div>
+                        <div class="performance-metrics">
+                            <div class="metrics-title">Conversational Performance</div>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-value">95%</div>
+                                    <div class="metric-label">User Satisfaction</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">88%</div>
+                                    <div class="metric-label">Rec Accuracy</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">High</div>
+                                    <div class="metric-label">Personalization</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+    
+            <!-- DeepMind RETRO -->
+            <div class="system-card deepmind" id="card5">
+                <div class="card-header">
+                    <div class="system-icon">RETRO</div>
+                    <div class="system-title">
+                        <h3>DeepMind RETRO</h3>
+                        <p>Retrieval-Enhanced Transformer Architecture</p>
+                    </div>
+                    <div class="company-badge">DeepMind</div>
+                </div>
+                <div class="card-content">
+                    <div class="left-column">
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🔧</span>
+                                Core Technologies
+                            </div>
+                            <div class="tech-stack">
+                                <div class="tech-item">RAG</div>
+                                <div class="tech-item">k-NN</div>
+                                <div class="tech-item">Vector Search</div>
+                                <div class="tech-item">Massive Corpus Indexing</div>
+                                <div class="tech-item">Frozen LLM</div>
+                                <div class="tech-item">Causal Attention</div>
+                                <div class="tech-item">Contrastive Learning</div>
+                            </div>
+                        </div>
+                        <div class="architecture-section">
+                            <div class="section-title">
+                                <span class="section-icon">🏗️</span>
+                                Architecture Pipeline
+                            </div>
+                            <div class="architecture-flow">
+                                <div class="flow-step">
+                                    Pre-trained Model (Frozen)
+                                    <div class="step-detail">Uses a large pre-trained LLM</div>
+                                </div>
+                                <div class="flow-step">
+                                    Massive Retrieval Database
+                                    <div class="step-detail">Indexed corpus segmented into chunks</div>
+                                </div>
+                                <div class="flow-step">
+                                    K-NN Retrieval at Inference
+                                    <div class="step-detail">Queries database for k-nearest text chunks</div>
+                                </div>
+                                <div class="flow-step">
+                                    Contextualized Token Generation
+                                    <div class="step-detail">Retrieved chunks provide additional context</div>
+                                </div>
+                                <div class="flow-step">
+                                    Continuous Learning Loop
+                                    <div class="step-detail">Update knowledge base without retraining LLM</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="right-column">
+                        <div class="technical-specs">
+                            <div class="section-title">
+                                <span class="section-icon">📊</span>
+                                Technical Specifications
+                            </div>
+                            <div class="spec-grid">
+                                <div class="spec-item">
+                                    <span class="spec-label">Base Model:</span>
+                                    <span class="spec-value">7.5B params</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Knowledge Base:</span>
+                                    <span class="spec-value">2T token corpus</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Update Cost:</span>
+                                    <span class="spec-value">Low (Index Update)</span>
+                                </div>
+                                <div class="spec-item">
+                                    <span class="spec-label">Freshness:</span>
+                                    <span class="spec-value">Very High</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="use-case-section">
+                            <div class="section-title">
+                                <span class="section-icon">💡</span>
+                                Ideal Use Cases
+                            </div>
+                            <div class="use-case-list">
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Fact-checking, knowledge-intensive tasks</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Recommending fresh news or articles</div>
+                                <div class="use-case-item"><i class="fas fa-check-circle"></i>Long-tail content discovery & research</div>
+                            </div>
+                        </div>
+                        <div class="performance-metrics">
+                            <div class="metrics-title">Research Performance</div>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-value">SOTA</div>
+                                    <div class="metric-label">Factual Accuracy</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">Low</div>
+                                    <div class="metric-label">Hallucination Rate</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">High</div>
+                                    <div class="metric-label">Scalability</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="key-insight">
+            <div class="insight-title">The Evolution of LLM-Based RecSys: Key Technical Insights</div>
+            <div class="insight-text">
+                The shift towards LLM-based systems is driven by their ability to handle **unstructured, multimodal data** and perform **complex, nuanced reasoning**. Architectures like Amazon's M6-Rec unify multiple recommendation tasks, while retrieval-focused models like DeepMind's RETRO solve the challenge of **knowledge freshness and scalability**. The choice of architecture depends on the domain, with a clear trade-off between the complexity and a model's ability to offer real-time, personalized experiences.
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentCard = 1;
+        let countdownInterval;
+        let isPlaying = true;
+        let timeLeft = 7.0;
+        
+        const cardSystems = [
+            "Amazon M6-Rec - Multimodal E-commerce Recommendations",
+            "Netflix RecLLM - Streaming-Optimized Architecture", 
+            "YouTube PaLM-Rec - Two-Stage Video Recommendation",
+            "Microsoft ChatRec - Conversational Recommender Systems",
+            "DeepMind RETRO - Retrieval-Enhanced Transformer Architecture"
+        ];
+        const totalCards = cardSystems.length;
+
+        function updateTimer() {
+            if (timeLeft > 0) {
+                timeLeft -= 0.1;
+            } else {
+                currentCard++;
+                if (currentCard > totalCards) {
+                    currentCard = 1;
+                }
+                showCard(currentCard);
+                timeLeft = 7.0;
+            }
+        }
+        
+        function showCard(cardNumber) {
+            const progressFill = document.getElementById('progressFill');
+            progressFill.style.width = `${(cardNumber / totalCards) * 100}%`;
+            
+            document.getElementById('currentSystem').textContent = cardSystems[cardNumber - 1];
+            
+            for (let i = 1; i <= totalCards; i++) {
+                const card = document.getElementById(`card${i}`);
+                if (i === cardNumber) {
+                    card.classList.add('active');
+                    setTimeout(() => {
+                        card.classList.add('zoomed');
+                    }, 500);
+                } else {
+                    card.classList.remove('active');
+                    card.classList.remove('zoomed');
+                }
+            }
+            
+            timeLeft = 7.0;
+        }
+        
+        function startAnimation() {
+            if (isPlaying) return;
+            
+            isPlaying = true;
+            const playButton = document.querySelector('.control-btn:first-child');
+            const otherActiveButton = document.querySelector('.control-btn.active');
+            if (otherActiveButton) otherActiveButton.classList.remove('active');
+            playButton.classList.add('active');
+            
+            countdownInterval = setInterval(updateTimer, 100); 
+        }
+        
+        function pauseAnimation() {
+            isPlaying = false;
+            clearInterval(countdownInterval);
+            const pauseButton = document.querySelector('.control-btn:nth-child(2)');
+            const otherActiveButton = document.querySelector('.control-btn.active');
+            if (otherActiveButton) otherActiveButton.classList.remove('active');
+            pauseButton.classList.add('active');
+        }
+        
+        function resetAnimation() {
+            pauseAnimation();
+            currentCard = 1;
+            timeLeft = 7.0;
+            showCard(1);
+            const resetButton = document.querySelector('.control-btn:last-child');
+            const otherActiveButton = document.querySelector('.control-btn.active');
+            if (otherActiveButton) otherActiveButton.classList.remove('active');
+            resetButton.classList.add('active');
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            showCard(1);
+            setTimeout(startAnimation, 1000);
+        });
+
+        // Event listeners for direct card clicks
+        document.getElementById('card1').addEventListener('click', function() { pauseAnimation(); currentCard = 1; showCard(1); });
+        document.getElementById('card2').addEventListener('click', function() { pauseAnimation(); currentCard = 2; showCard(2); });
+        document.getElementById('card3').addEventListener('click', function() { pauseAnimation(); currentCard = 3; showCard(3); });
+        document.getElementById('card4').addEventListener('click', function() { pauseAnimation(); currentCard = 4; showCard(4); });
+        document.getElementById('card5').addEventListener('click', function() { pauseAnimation(); currentCard = 5; showCard(5); });
+    </script>
+</body>
+</html>
